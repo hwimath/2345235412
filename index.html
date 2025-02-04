@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>단항식의 곱셈 나눗셈</title>
+  <!-- MathJax -->
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" defer></script>
+  <style>
+    body {
+      background-color: #fff; 
+      color: #000;
+      font-family: sans-serif;
+      margin: 1em;
+    }
+    h1, h2, h3 {
+      margin: 0.5em 0;
+    }
+    .hidden {
+      display: none;
+    }
+    .energy-bar {
+      width: 200px; 
+      height: 20px; 
+      background-color: #aaa; 
+      overflow: hidden;
+      margin-bottom: 1em;
+    }
+    .energy-fill {
+      height: 20px; 
+      background-color: #000;
+      width: 100%;
+      transition: width 0.2s linear;
+    }
+    .choice-button {
+      display: block;
+      margin: 0.3em 0;
+      padding: 0.4em;
+      background: #fff;
+      color: #000;
+      border: 1px solid #000;
+      cursor: pointer;
+      width: fit-content;
+    }
+    #response {
+      white-space: pre-wrap;
+      border: 1px solid #000;
+      padding: 0.5em;
+      margin-top: 1em;
+      max-width: 300px;
+      word-wrap: break-word;
+    }
+    /* 흑백 테마를 유지하기 위해 기본 링크 색도 검은색 처리 */
+    a, a:visited {
+      color: #000;
+    }
+  </style>
+</head>
+<body>
+
+<h1>단항식의 곱셈 나눗셈</h1>
+
+<div id="app">
+  <!-- 첫 화면(이름 입력) -->
+  <div id="welcome-screen">
+    <h2>이름을 입력해주세요</h2>
+    <input type="text" id="user-name" placeholder="이름" />
+    <button onclick="goDifficulty()">확인</button>
+  </div>
+
+  <!-- 난이도 선택 화면 -->
+  <div id="difficulty-screen" class="hidden">
+    <h2>난이도를 선택하세요</h2>
+    <button onclick="startGame('최상')">최상 (20초 시작, 문제당 20점)</button>
+    <button onclick="startGame('상')">상 (30초 시작, 문제당 15점)</button>
+    <button onclick="startGame('중')">중 (40초 시작, 문제당 13점)</button>
+    <button onclick="startGame('하')">하 (시간제한 없음, 문제당 10점)</button>
+  </div>
+
+  <!-- 퀴즈 화면 -->
+  <div id="quiz-screen" class="hidden">
+    <div>
+      <div>전체 플레이 시간: <span id="total-time">0</span>초</div>
+      <div>남은 기회: <span id="chances">3</span></div>
+      <div>점수: <span id="score">0</span></div>
+    </div>
+    <div class="energy-bar" id="energy-bar">
+      <div class="energy-fill" id="energy-fill"></div>
+    </div>
+    <div id="question-container"></div>
+  </div>
+
+  <!-- 게임 종료 화면 -->
+  <div id="game-over-screen" class="hidden">
+    <h2>게임 종료!</h2>
+    <p>최종 점수: <span id="final-score"></span></p>
+    <p>총 걸린 시간: <span id="final-time"></span>초</p>
+    <button onclick="sendScore()">점수전송</button>
+    <div id="response"></div>
+  </div>
+</div>
+
+<script>
+// ------------------------------------------------------------
+// 1. 문제 데이터(불필요한 괄호 속 힌트 제거된 버전)
+// ------------------------------------------------------------
+//   question : "문제: ... 간단히 하시오."
+//   options  : ["보기1","보기2","보기3","보기4"]
+//   answer   : 정답 인덱스(0~3)
+// ------------------------------------------------------------
+const questionBank = [
+  {
+    // #100
+    question: "문제: \\((-2x^3y^2)^3 \\div (2x^5y^3 \\times 3x^2y)\\) 를 간단히 하시오.",
+    options: [
+      "\\(-\\dfrac{4}{3}x^2y^2\\)",
+      "\\(\\dfrac{4}{3}x^2y^2\\)",
+      "\\(-\\dfrac{4}{3}xy\\)",
+      "\\(-4x^2y^2\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #28
+    question: "문제: \\(5x^3y^2 \\times (-4xy) \\times x^2y^3\\) 를 간단히 하시오.",
+    options: [
+      "\\(-20x^5y^5\\)",
+      "\\(-20x^6y^6\\)",
+      "\\(20x^6y^6\\)",
+      "\\(-20x^5y^6\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #16
+    question: "문제: \\((-ab^3) \\times (-2a^2b)\\) 를 간단히 하시오.",
+    options: [
+      "\\(-2a^3b^4\\)",
+      "\\(2a^3b^4\\)",
+      "\\(-2a^2b^4\\)",
+      "\\(2a^3b^3\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #3
+    question: "문제: \\(2x^2 \\times 6y\\) 를 간단히 하시오.",
+    options: [
+      "\\(8x^2y\\)",
+      "\\(12x^2y^2\\)",
+      "\\(12x^2y\\)",
+      "\\(-12x^3y\\)"
+    ],
+    answer: 2
+  },
+  {
+    // #45
+    question: "문제: \\((x^2y^3)^3 \\div (3x^3y)^2\\) 를 간단히 하시오.",
+    options: [
+      "\\(\\tfrac{1}{9}y^7\\)",
+      "\\(\\tfrac{y^2}{9x^6}\\)",
+      "\\(\\tfrac{x^6y^9}{9}\\)",
+      "\\(-\\tfrac{1}{9}y^7\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #98
+    question: "문제: \\((2x^2y)^2 \\div (8x^3y^4 \\times 6x^5y^3)\\) 를 간단히 하시오.",
+    options: [
+      "\\(\\dfrac{1}{12x^4y^5}\\)",
+      "\\(-\\dfrac{1}{12x^4y^5}\\)",
+      "\\(\\dfrac{1}{12x^3y^5}\\)",
+      "\\(\\dfrac{4x^4y^2}{48x^8y^7}\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #60
+    question: "문제: \\((-4a^5b^2) \\div\\bigl(-\\tfrac{2}{7}a^3b^2\\bigr)\\) 를 간단히 하시오.",
+    options: [
+      "\\(-14a^2\\)",
+      "\\(14a^2\\)",
+      "\\(-2a^8b^4\\)",
+      "\\(2a^2\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #4
+    question: "문제: \\((-3a) \\times 2b\\) 를 간단히 하시오.",
+    options: [
+      "\\(-6ab\\)",
+      "\\(6ab\\)",
+      "\\(-6a^2b\\)",
+      "\\(-1.5ab\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #39
+    question: "문제: \\(12b^2 \\div 6ab^2\\) 를 간단히 하시오.",
+    options: [
+      "\\(2a\\)",
+      "\\(\\dfrac{2}{a}\\)",
+      "\\(\\dfrac{12b^2}{6ab^2}\\)",
+      "\\(-\\dfrac{2}{a}\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #1
+    question: "문제: \\(2a \\times 4b\\) 를 간단히 하시오.",
+    options: [
+      "\\(6ab\\)",
+      "\\(8ab\\)",
+      "\\(2a^2b\\)",
+      "\\(-8ab\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #34
+    question: "문제: \\((2x)^3 \\times (-3xy)^2 \\times (-x^2y)^4\\) 를 간단히 하시오.",
+    options: [
+      "\\(72x^{13}y^6\\)",
+      "\\(-72x^{13}y^6\\)",
+      "\\(72x^{14}y^7\\)",
+      "\\(-72x^7y^6\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #65
+    question: "문제: \\(\\bigl(-\\tfrac{2}{3}a^4b^5\\bigr)^2 \\div \\bigl(-\\tfrac{2}{9}a^3b\\bigr)\\) 를 간단히 하시오.",
+    options: [
+      "\\(-2a^5b^9\\)",
+      "\\(-\\tfrac{2}{a^5b^9}\\)",
+      "\\(-2a^7b^4\\)",
+      "\\(-2a^5b^9\\)"
+    ],
+    answer: 3
+  },
+  {
+    // #31
+    question: "문제: \\((-2a^2b^3)^2 \\times (-2ab^2)^3 \\times 3a^3b^2\\) 를 간단히 하시오.",
+    options: [
+      "\\(-96a^9b^{11}\\)",
+      "\\(-32a^7b^{12}\\)",
+      "\\(-96a^{10}b^{14}\\)",
+      "\\(-32a^{10}b^{14}\\)"
+    ],
+    answer: 2
+  },
+  {
+    // #8
+    question: "문제: \\(6ab \\times 2b\\) 를 간단히 하시오.",
+    options: [
+      "\\(8ab^2\\)",
+      "\\(12ab^2\\)",
+      "\\(12a^2b\\)",
+      "\\(6ab^3\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #95
+    question: "문제: \\((-3y^3)^2 \\div\\bigl(-(2y^2)^3 \\times 4y^4\\bigr)\\) 를 간단히 하시오.",
+    options: [
+      "\\(-\\dfrac{9}{32y^4}\\)",
+      "\\(\\dfrac{9}{32y^4}\\)",
+      "\\(-\\dfrac{9y^4}{32}\\)",
+      "\\(-\\dfrac{9}{32}y^2\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #12
+    question: "문제: \\(5a^2b^5 \\times 7ab^4\\) 를 간단히 하시오.",
+    options: [
+      "\\(35a^3b^9\\)",
+      "\\(-35a^2b^9\\)",
+      "\\(12a^3b^5\\)",
+      "\\(35a^2b^5\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #44
+    question: "문제: \\((-6a^3) \\div\\bigl(\\tfrac{3}{5}a^2\\bigr)\\) 를 간단히 하시오.",
+    options: [
+      "\\(-6a / (\\tfrac{3}{5})\\)",
+      "\\(-10a\\)",
+      "\\(10a\\)",
+      "\\(-2a^3\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #15
+    question: "문제: \\((-3xy) \\times\\bigl(-\\tfrac{1}{5} x\\bigr)\\) 를 간단히 하시오.",
+    options: [
+      "\\(\\tfrac{3}{5}x^2y\\)",
+      "\\(-\\tfrac{3}{5}x^2y\\)",
+      "\\(\\tfrac{3}{5}xy\\)",
+      "\\(\\tfrac{3}{5}x^3y\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #117
+    question: "문제: \\((-3x^2y)^2 \\times (-xy^2)^3 \\div (-xy)^2\\) 를 간단히 하시오.",
+    options: [
+      "\\(-9x^5y^6\\)",
+      "\\(9x^5y^6\\)",
+      "\\(-9x^7y^8\\)",
+      "\\(-9x^5y^8\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #63
+    question: "문제: \\((8a^3b^4)^2 \\div\\bigl((-4ab^3)^2\\bigr)\\) 를 간단히 하시오.",
+    options: [
+      "\\(4a^4b^2\\)",
+      "\\(-4a^4b^2\\)",
+      "\\(48a^4b^2\\)",
+      "\\(\\dfrac{64a^6b^8}{16a^2b^6}\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #5
+    question: "문제: \\(-3x \\times (-7y)\\) 를 간단히 하시오.",
+    options: [
+      "\\(-21xy\\)",
+      "\\(21x^2y\\)",
+      "\\(-10xy\\)",
+      "\\(21xy\\)"
+    ],
+    answer: 3
+  },
+  {
+    // #61
+    question: "문제: \\((-12x^4y^3) \\div \\bigl(-\\tfrac{3}{5}x^2y\\bigr)\\) 를 간단히 하시오.",
+    options: [
+      "\\(-20x^2y^2\\)",
+      "\\(20x^2y^2\\)",
+      "\\(\\dfrac{-12x^4y^3}{-3x^2y}\\)",
+      "\\(\\dfrac{12x^2y^2}{3/5}\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #47
+    question: "문제: \\(-8x^2y^3 \\div (\\tfrac{4}{5}x y^2)\\) 를 간단히 하시오.",
+    options: [
+      "\\(-10xy\\)",
+      "\\(10xy\\)",
+      "\\(-\\dfrac{8x^2y^3}{4xy^2}\\)",
+      "\\(\\dfrac{8xy}{5}\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #46
+    question: "문제: \\(4x^3 \\div\\bigl(\\tfrac{2}{3}x^2\\bigr)\\) 를 간단히 하시오.",
+    options: [
+      "\\(6x\\)",
+      "\\(\\dfrac{4}{(2/3)x^2}\\)",
+      "\\(\\dfrac{6}{x}\\)",
+      "\\(-6x\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #66
+    question: "문제: \\((2a^2b^2)^3 \\div a^4b^3 \\div 4ab^2\\) 를 순서대로 계산하면?",
+    options: [
+      "\\(8a^2b^3\\)",
+      "\\(2ab\\)",
+      "\\(\\dfrac{8a^6b^6}{4ab^2}\\)",
+      "\\(\\dfrac{2}{ab}\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #14
+    question: "문제: \\(4x^2y \\times \\dfrac12 x^3\\) 를 간단히 하시오.",
+    options: [
+      "\\(2x^5y\\)",
+      "\\(\\dfrac12 x^5y\\)",
+      "\\(2x^2y^4\\)",
+      "\\(-2x^5y\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #62
+    question: "문제: \\((4x^2)^2 \\div 2x^3\\) 를 간단히 하시오.",
+    options: [
+      "\\(8x\\)",
+      "\\(8x^2\\)",
+      "\\(\\dfrac{16}{2x^7}\\)",
+      "\\(-8x\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #2
+    question: "문제: \\(4x \\times 5y\\) 를 간단히 하시오.",
+    options: [
+      "\\(20x^2y\\)",
+      "\\(9xy\\)",
+      "\\(20xy\\)",
+      "\\(-20xy\\)"
+    ],
+    answer: 2
+  },
+  {
+    // #97
+    question: "문제: \\((3a^2b^3)^2 \\times 2a^3b \\div (-6a^5b^4)\\) 를 간단히 하시오.",
+    options: [
+      "\\(-3a^2b^3\\)",
+      "\\(3a^2b^3\\)",
+      "\\(-18a^7b^7\\)",
+      "\\(18a^2b^3\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #49
+    question: "문제: \\(8a^4b^3 \\div\\bigl(-\\tfrac{4}{5} a^6 b\\bigr)\\) 를 간단히 하시오.",
+    options: [
+      "\\(-10 \\dfrac{b^2}{a^2}\\)",
+      "\\(-10 \\dfrac{a^2}{b^2}\\)",
+      "\\(\\dfrac{10b^2}{a^2}\\)",
+      "\\(-\\dfrac{8a^4b^3}{4a^6b}\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #35
+    question: "문제: \\((x^3y)^2 \\times y^4 \\times (-x^3y) \\times (y^2)^3\\) 를 간단히 하시오.",
+    options: [
+      "\\(-x^9y^{13}\\)",
+      "\\(-x^9y^{12}\\)",
+      "\\(x^9y^{12}\\)",
+      "\\(-x^{12}y^9\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #7
+    question: "문제: \\(4a^2 \\times (-5b^3)\\) 를 간단히 하시오.",
+    options: [
+      "\\(-20a^2b^3\\)",
+      "\\(20a^2b^3\\)",
+      "\\(-9a^2b^3\\)",
+      "\\(-20ab^3\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #119
+    question: "문제: \\((-2xy)^3 \\div\\bigl(-(x^3y^2)^2\\bigr) \\times \\dfrac{3y^2}{4x^4}\\) 를 간단히 하시오.",
+    options: [
+      "\\(\\dfrac{6}{x^7y}\\)",
+      "\\(\\dfrac{6y}{x^7}\\)",
+      "\\(-\\dfrac{6y}{x^7}\\)",
+      "\\(\\dfrac{8y^2}{4x^7}\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #37
+    question: "문제: \\(36x^3 \\div\\dfrac{6}{7}x\\) 를 간단히 하시오.",
+    options: [
+      "\\(42x^2\\)",
+      "\\(-42x^2\\)",
+      "\\(30x^2\\)",
+      "\\(\\dfrac{42}{x^2}\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #11
+    question: "문제: \\(x^2y^2 \\times (4xy^2)^2\\) 를 간단히 하시오.",
+    options: [
+      "\\(16x^4y^6\\)",
+      "\\(16x^6y^6\\)",
+      "\\(8x^3y^4\\)",
+      "\\(-16x^4y^6\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #33
+    question: "문제: \\((a^3b^2)^2 \\times (-a^2) \\times (-a^4b)\\) 를 간단히 하시오.",
+    options: [
+      "\\(a^6b^4\\)",
+      "\\(-a^8b^4\\)",
+      "\\(a^{12}b^5\\)",
+      "\\(-a^{12}b^5\\)"
+    ],
+    answer: 2
+  },
+  {
+    // #64
+    question: "문제: \\((3a^2b^3)^3 \\div ((-3a^2b^2)^2)\\) 를 간단히 하시오.",
+    options: [
+      "\\(3a^2b^5\\)",
+      "\\(-3a^2b^5\\)",
+      "\\(3a^6b^5\\)",
+      "\\(\\tfrac{27}{9}a^2b^9\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #50
+    question: "문제: \\(3a^8b^3 \\div\\bigl(\\tfrac{1}{4}a^4b^2\\bigr)\\) 를 간단히 하시오.",
+    options: [
+      "\\(12a^4b\\)",
+      "\\(-12a^4b\\)",
+      "\\(\\dfrac{3a^8b^3}{(1/4)a^4b^2}\\)",
+      "\\(4a^8b^5\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #30
+    question: "문제: \\(4x^2 \\times 3xy \\times (-xy)^2\\) 를 간단히 하시오.",
+    options: [
+      "\\(-12x^5y^3\\)",
+      "\\(12x^5y^3\\)",
+      "\\(12x^4y^2\\)",
+      "\\(-12x^4y^3\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #96
+    question: "문제: \\((3x^2y)^2 \\times x^3y^4 \\div x^4y^3\\) 를 간단히 하시오.",
+    options: [
+      "\\(9x^7y^6\\)",
+      "\\(9x^3y^3\\)",
+      "\\(9x^3y\\)",
+      "\\(9x^3y^3\\)"
+    ],
+    answer: 3
+  },
+  {
+    // #10
+    question: "문제: \\(( -2a )^2 \\times (-3a)\\) 를 간단히 하시오.",
+    options: [
+      "\\(12a^3\\)",
+      "\\(-12a^3\\)",
+      "\\(-6a^3\\)",
+      "\\(-12a^2\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #94
+    question: "문제: \\(( -2x^2 )^3 \\div 6x^4 \\times ( -3x^2 )\\) 를 간단히 하시오.",
+    options: [
+      "\\(\\dfrac{-8x^6}{6x^4} \\times (-3x^2) = -4x^2 \\times(-3x^2)\\)",
+      "\\(4x^4\\)",
+      "\\(-4x^4\\)",
+      "\\(4x^2\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #6
+    question: "문제: \\((-5ab^2) \\times (-2a^2b)\\) 를 간단히 하시오.",
+    options: [
+      "\\(-10a^3b^3\\)",
+      "\\(10a^3b^3\\)",
+      "\\(10a^2b^3\\)",
+      "\\(5a^3b^2\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #9
+    question: "문제: \\(3a^3 \\times 7b^4\\) 를 간단히 하시오.",
+    options: [
+      "\\(10a^3b^4\\)",
+      "\\(21a^7b^4\\)",
+      "\\(21a^3b^4\\)",
+      "\\(-21a^3b^4\\)"
+    ],
+    answer: 2
+  },
+  {
+    // #120
+    question: "문제: \\(2a^2b \\div\\bigl(-\\tfrac{2}{3}a^3b\\bigr) \\times 3ab^2\\) 를 간단히 하시오.",
+    options: [
+      "\\(-9b^2\\)",
+      "\\(\\tfrac{-9}{ab^2}\\)",
+      "\\(-9ab^2\\)",
+      "\\(\\tfrac{9b^2}{a}\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #41
+    question: "문제: \\((-8x^3y^2) \\div 5x^2y^5\\) 를 간단히 하시오.",
+    options: [
+      "\\(-\\tfrac{8}{5}x y^{-3}\\)",
+      "\\(-\\tfrac{8x}{5y^3}\\)",
+      "\\(\\tfrac{8x}{5y^3}\\)",
+      "\\(-\\tfrac{8}{5}x^3y^2\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #13
+    question: "문제: \\(( -4x )^2 \\times ( -6xy )\\) 를 간단히 하시오.",
+    options: [
+      "\\(96x^3y\\)",
+      "\\(-96x^3y\\)",
+      "\\(-24x^2y\\)",
+      "\\(24x^3y\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #29
+    question: "문제: \\(\\bigl(-\\tfrac{b}{2a}\\bigr)^2 \\times \\bigl(\\tfrac{3}{ab}\\bigr)^3 \\times(-ab)\\) 를 간단히 하시오.",
+    options: [
+      "\\(\\tfrac{27}{4a^4}\\)",
+      "\\(-\\tfrac{27}{4a^4}\\)",
+      "\\(\\tfrac{27}{4a^5b}\\)",
+      "\\(-\\tfrac{27}{4a^4b}\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #42
+    question: "문제: \\(6a^2 \\div 2a\\) 를 간단히 하시오.",
+    options: [
+      "\\(3a^2\\)",
+      "\\(3a\\)",
+      "\\(\\dfrac{6}{2a}\\)",
+      "\\(-3a\\)"
+    ],
+    answer: 1
+  },
+  {
+    // #38
+    question: "문제: \\(-21x^3y^2 \\div (-4xy^3)\\) 를 간단히 하시오.",
+    options: [
+      "\\(\\dfrac{21x^2}{4y}\\)",
+      "\\(-\\dfrac{21x^2}{4y}\\)",
+      "\\(\\dfrac{21y^2}{4x^4}\\)",
+      "\\(\\dfrac{21x^3y^2}{-4xy^3}\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #99
+    question: "문제: \\(12x^5y^4 \\div\\bigl((3x^2y)^2 \\times 3xy\\bigr)\\) 의 결과는?",
+    options: [
+      "\\(\\dfrac{4y}{9}\\)",
+      "\\(\\dfrac{4}{9x}y\\)",
+      "\\(\\dfrac{4}{9}xy\\)",
+      "\\(-\\dfrac{4y}{9}\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #40
+    question: "문제: \\(16a^2b \\div (-4a)\\) 를 간단히 하시오.",
+    options: [
+      "\\(-4ab\\)",
+      "\\(4a^3b\\)",
+      "\\(-4ab^2\\)",
+      "\\(-4ab\\)"
+    ],
+    answer: 0
+  },
+  {
+    // #32
+    question: "문제: \\(((x^2)y)^3 \\times x y^2 \\times (-x^3y)\\) 를 간단히 하시오.",
+    options: [
+      "\\(-x^{10}y^6\\)",
+      "\\(-x^9y^5\\)",
+      "\\(x^{10}y^5\\)",
+      "\\(-x^{10}y^7\\)"
+    ],
+    answer: 0
+  }
+];
+
+// ------------------------------------------------------------
+// 2. 랜덤 섞기 함수
+// ------------------------------------------------------------
+function shuffleArray(arr) {
+  for(let i = arr.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i+1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+// ------------------------------------------------------------
+// 3. 전역 변수
+// ------------------------------------------------------------
+let chosenDifficulty = "";
+let timeLimit = 0;   // 한 문제당 주어지는 시간(초)
+let pointsPerQuestion = 0;
+let chanceLeft = 3;
+let currentScore = 0;
+let currentIndex = 0;
+let questionOrder = [];  // 섞인 문제 인덱스
+let energyInterval = null;
+let totalGameTime = 0;
+let totalTimeInterval = null;
+let userName = "";
+let gameOver = false;
+let usedCount = 0; // 문제를 몇 개나 냈는지(모두 소진 후 무한 반복)
+
+// ------------------------------------------------------------
+// 4. 초기 화면에서 이름 입력 후 난이도 화면으로
+// ------------------------------------------------------------
+function goDifficulty(){
+  const nameField = document.getElementById("user-name");
+  if(!nameField.value.trim()){
+    alert("이름을 입력해주세요!");
+    return;
+  }
+  userName = nameField.value.trim();
+  document.getElementById("welcome-screen").classList.add("hidden");
+  document.getElementById("difficulty-screen").classList.remove("hidden");
+}
+
+// ------------------------------------------------------------
+// 5. 난이도 선택 후 게임 시작
+// ------------------------------------------------------------
+function startGame(diff){
+  chosenDifficulty = diff;
+  if(diff === "최상"){
+    timeLimit = 20; 
+    pointsPerQuestion = 20;
+  } else if(diff === "상"){
+    timeLimit = 30;
+    pointsPerQuestion = 15;
+  } else if(diff === "중"){
+    timeLimit = 40;
+    pointsPerQuestion = 13;
+  } else { // 하
+    timeLimit = 999999;  // 사실상 무제한
+    pointsPerQuestion = 10;
+  }
+  document.getElementById("difficulty-screen").classList.add("hidden");
+  document.getElementById("quiz-screen").classList.remove("hidden");
+
+  // 전체 시간 측정 시작
+  totalGameTime = 0;
+  totalTimeInterval = setInterval(()=>{
+    totalGameTime++;
+    document.getElementById("total-time").innerText = totalGameTime;
+  },1000);
+
+  // 문제 순서 섞기
+  questionOrder = [...Array(questionBank.length).keys()];
+  shuffleArray(questionOrder);
+
+  currentIndex = 0;
+  chanceLeft = 3;
+  currentScore = 0;
+  usedCount = 0;
+  
+  document.getElementById("chances").innerText = chanceLeft;
+  document.getElementById("score").innerText = currentScore;
+  
+  loadQuestion();
+}
+
+// ------------------------------------------------------------
+// 6. 문제 로드
+// ------------------------------------------------------------
+function loadQuestion(){
+  if(gameOver) return;
+  
+  // 만약 모든 문제를 한 바퀴 다 돌았다면 => 그 뒤로는 무한 랜덤
+  if(usedCount >= questionBank.length){
+    currentIndex = Math.floor(Math.random() * questionBank.length);
+  } else {
+    currentIndex = questionOrder[usedCount];
+    usedCount++;
+  }
+
+  const qData = questionBank[currentIndex];
+  const qContainer = document.getElementById("question-container");
+  
+  // 문제 표시
+  let html = `<div><b>문제:</b> ${qData.question}</div><br/>`;
+  
+  // 보기를 섞기 위해 options & answer를 임시 복사
+  let tempOptions = qData.options.map((opt, i)=>({opt, idx:i}));
+  shuffleArray(tempOptions);
+
+  html += `<div>보기:</div>`;
+  tempOptions.forEach((item, i)=>{
+    html += `
+      <button class="choice-button" onclick="checkAnswer(${item.idx})">
+        ( ${String.fromCharCode(65+i)} ) ${item.opt}
+      </button>
+    `;
+  });
+  
+  qContainer.innerHTML = html;
+  
+  // 매번 수식 렌더링
+  MathJax.typeset();
+
+  // 에너지바 타이머
+  if(energyInterval) clearInterval(energyInterval);
+  const energyFill = document.getElementById("energy-fill");
+  let remain = timeLimit;
+  energyFill.style.width = "100%";
+
+  if(timeLimit < 999999){ 
+    energyInterval = setInterval(()=>{
+      remain--;
+      const ratio = (remain/timeLimit)*100;
+      energyFill.style.width = ratio + "%";
+      if(remain<=0){
+        // 시간 초과
+        clearInterval(energyInterval);
+        loseChance(); 
+      }
+    },1000);
+  } 
+  else {
+    // 난이도 하(무제한)
+    energyFill.style.width = "100%";
+  }
+}
+
+// ------------------------------------------------------------
+// 7. 정답 확인
+// ------------------------------------------------------------
+function checkAnswer(selectedIndex){
+  if(gameOver) return;
+  const correctIndex = questionBank[currentIndex].answer;
+  
+  // 문제당 남은 에너지바 정지
+  if(energyInterval) clearInterval(energyInterval);
+
+  if(selectedIndex === correctIndex){
+    // 정답
+    currentScore += pointsPerQuestion;
+    document.getElementById("score").innerText = currentScore;
+    nextQuestion();
+  } else {
+    // 오답
+    alert("틀렸습니다! 정답: " + questionBank[currentIndex].options[correctIndex]);
+    loseChance();
+  }
+}
+
+// ------------------------------------------------------------
+// 8. 기회 소모
+// ------------------------------------------------------------
+function loseChance(){
+  chanceLeft--;
+  document.getElementById("chances").innerText = chanceLeft;
+  if(chanceLeft<=0){
+    endGame();
+  } else {
+    nextQuestion();
+  }
+}
+
+// ------------------------------------------------------------
+// 9. 다음 문제 로드(무제한 모드 or 전체문제 일회제 + 무한)
+// ------------------------------------------------------------
+function nextQuestion(){
+  loadQuestion();
+}
+
+// ------------------------------------------------------------
+// 10. 게임 종료
+// ------------------------------------------------------------
+function endGame(){
+  gameOver = true;
+  if(energyInterval) clearInterval(energyInterval);
+  if(totalTimeInterval) clearInterval(totalTimeInterval);
+
+  document.getElementById("quiz-screen").classList.add("hidden");
+  document.getElementById("final-score").innerText = currentScore;
+  document.getElementById("final-time").innerText = totalGameTime;
+  document.getElementById("game-over-screen").classList.remove("hidden");
+}
+
+// ------------------------------------------------------------
+// 11. 점수 전송(요청된 함수)
+// ------------------------------------------------------------
+function sendScore(){
+  saveData("단항식의 곱셈 나눗셈", userName, currentScore, totalGameTime);
+}
+
+// ------------------------------------------------------------
+// 12. 서버 전송 함수 (제공 코드)
+// ------------------------------------------------------------
+async function saveData(game, name, score, elapsedTime) {
+    const FUNCTION_URL = "https://us-central1-record-f420d.cloudfunctions.net/report";
+
+    const requestData = {
+        game,
+        name,
+        score: parseInt(score, 10),
+        elapsedTime: parseInt(elapsedTime, 10)
+    };
+
+    try {
+        const response = await fetch(FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestData)
+        });
+
+        const responseData = await response.json();
+
+        if (response.ok) {
+            document.getElementById('response').innerText = 
+                `성공: ${JSON.stringify(responseData, null, 2)}`;
+        } else {
+            document.getElementById('response').innerText = 
+                `오류: ${JSON.stringify(responseData, null, 2)}`;
+        }
+    } catch (error) {
+        console.error('요청 실패:', error);
+        document.getElementById('response').innerText = 
+            `네트워크 오류: ${error.message}`;
+    }
+}
+</script>
+</body>
+</html>
